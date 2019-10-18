@@ -1,0 +1,456 @@
+---
+output:
+  html_document: default
+  pdf_document: default
+---
+# Cleaning and exploring TFBS_presences output
+
+## Purpose
+
+To map TFBS changes onto tree and visualize what is the prominant changes that are occuring. 
+
+What I am thinking is to first run map_motif or a similar program to isolate TFBS motifs in the raw sequence. For example, here would be the steps for performing the first steps:
+
+1. Map TFBS on the raw sequences. 
+  -  Need cutoff and score
+2. Use coordinates of TFBS to find the motifs in the alignments. 
+  - [ ] We need to use this first to test the map motif program
+3. Retrieve the regions where this occurs in all species. At this point there will be species that have this motif and those that do not. For those species that do, you can ask: How is this sequence different between them? Are these clade specific changes?  For those species that do not have the sequence, is this an instance of TFBS sequence decay?  How did this sequence decay?  It would be good to be able to identify, using the tree, what TFBS arose and which TFBS decayed. Still have to work out exactly how, but overall, we could use ancestral state reconstruction. 
+
+## Libraries
+
+```{r}
+## Libraries
+library(ggplot2)
+library(reshape2)
+library(stringr)
+library(tidyverse)
+library(ggtree)
+library(skimr)
+library(ape)
+library(viridis)
+library(viridisLite)
+library(plyr)
+#library(qdap)
+library(stringr)
+library(Biostrings)
+library(BSgenome)
+library(Rsamtools)
+library(PWMEnrich)
+```
+
+
+## Load in TFBS_presence data
+
+This data was created using the [TFBS_presence](https://github.com/DiscoveryDNA/TFBS_presence) repo using the [`zelda_12July2018.ipynb`] (https://github.com/DiscoveryDNA/TFBS_presence/blob/master/code/zelda_12July2018.ipynb) notebook.
+
+We are starting with just mapping zelda (zld). Zld is a TFBS that works as a zygotic genome activator because it has a global role in regulating early expressed genes, such as genes essential for cellularization, sex determination and pattern formation. Zld is also required at later times in development. 
+
+```{r}
+## Load in freq and tables
+## position in which TFBS was found in each file. 
+pos <- read.csv("~/Desktop/data_output/bcd/occurance_align_outlier_rm_with_length_VT16679.fa.csv")
+pos <- pos[,-1]
+pos
+
+## This is the score distribution
+ggplot(pos, aes(score)) +
+  geom_density()
+```
+
+Great.  Now I need a way to grab parts of an alignment.
+
+I need to:
+1. use the`pos$Alignment.File.Name` to read an alignment file.
+2. Use the alignment file to grab a range in the the alignment, across the entire alignment.
+3. Eventually be able to grab only certain species. 
+
+Once I have this information, I can start mapping how the sequences decay in time. 
+
+Dealing with strings [tutorial](https://web.stanford.edu/class/bios221/labs/biostrings/lab_1_biostrings.html).
+
+```{r}
+
+## This is just testing a position that was named.
+test <- readDNAStringSet("../data/3_species_only/outlier_rm_with_length_VT16679.fa")
+
+## MEMB002D 1460
+head(test$`VT16679|0|MEMB002D|-|1976`)
+
+## Change to string
+substring(toString(test$`VT16679|0|MEMB002D|-|1976`), 1461, 1466)
+
+## Subset based on range
+## as.data.frame(subseq(test, 3, 10))
+## sub.test <- subseq(test, 3, 10)
+## set.test <- DNAStringSet(sub.test)
+
+## Gives consensus matrix at each position
+vis1 <- rownames_to_column(
+  as.data.frame(
+    consensusMatrix(set.test, 
+                    baseOnly =T, 
+                    as.prob = TRUE)))
+
+
+colnames(vis1)[2:9] <- 1:8
+data_long <- gather(vis1, "motif_position", "prob", 2:9)
+
+## Creates a probability graphy at each position of the motif that was extracted
+ggplot(data_long, aes(motif_position, 
+                      prob, 
+                      fill = rowname)) +
+  geom_bar(stat = "identity")
+  
+## Another function that does essentially the same thing
+## vis <- alphabetFrequency(set.test, baseOnly=T, as.prob = TRUE)
+```
+
+## Trying to gather all postions in a file
+
+```{r}
+## All the posistion are all found in the `pos` dataframe. But we still need a way to exact the sequences from the original fasta files.
+
+## The actual full actual sequences need to be read 
+## - [ ] eventually we will need a way to read in the fasta file by VT ID.
+
+test <- readDNAStringSet("../data/3_24_species_only_alignment/align_outlier_rm_with_length_VT44110.fa")
+
+## Subset above file and get start and end
+pos_2 <- pos %>% 
+  filter(align_file == "VT44110" & 
+           strand == "positive") %>% 
+  mutate(start = align_position + 1) %>%
+  mutate(end = start + 5) # %>% 
+  # distinct(align_position, .keep_all = TRUE)
+
+dim(pos_2)
+## test
+## pos %>% 
+## filter(align_position == 2970 & align_file == "VT44110")
+```
+
+### Extracting the motif for each position 
+
+Extracting the motif for each position.
+
+There are a few arguments here. 
+1. region [ ]
+2. motif align_position [ ] 
+3. motif start and end position [ ]
+
+```{r}
+### This is where I am attempting to test if map_motif works
+
+### Isolate the motifs that were scored as zelda.
+## zelda = CAGGTAG
+
+## Make a list of all the regions and add start and end columns
+sub.test <- list()
+
+for (i in 1:nrow(pos_2)) {
+  sub.test[[i]] <- rownames_to_column(as.data.frame(subseq(test, pos_2$start[i], pos_2$end[i])))
+sub.test[[i]]$align_position <- pos_2$align_position[i]
+}
+
+all_motifs <- do.call(rbind, sub.test)
+
+## Here is the dataframe
+head(all_motifs)
+```
+
+### Test I: Testing if Map_motif works
+
+**Set-up**:This all would work if the map_motif is correct, but I want to double check by looking at only the sequences that were called as having a TFBS. zelda = CAGGTAG, so most sequences should be very close to that. 
+
+**Conclusion**: 
+
+This is wrong.  Something is wrong. 
+- [x] I need to do this with them all again with the raw sequences. Maybe there is something wrong with the map portion. Done see Test II.
+- [ ] Need to try again with another TFBS.
+
+```{r}
+## Split fasta head ID
+all_motifs_2 <- all_motifs %>%
+  separate(rowname, c("align_file", "function", "species"), "\\|") %>%
+  select(align_file, species, x, align_position)
+
+## Need to merge 
+dim(all_motifs_2)
+dim(pos_2)
+
+only_called_motifs <- merge(pos_2, all_motifs_2, by = c("align_file", "species", "align_position"))
+
+dim(only_called_motifs) # should be the same as pos2
+only_called_motifs$x
+```
+
+### Test II: Trying to isolate problem
+
+**Set-up**: Repeating Test I: Trying again with raw sequence
+
+**Conclusion**: 
+
+Still wrong.  These sequences are close, but off.  Maybe the map_motif 
+```{r}
+## Make a list of all the regions and add start and end columns
+
+raw_test <- readDNAStringSet("../data/3_species_only/outlier_rm_with_length_VT44110.fa")
+
+## Subset above file and get start and end
+pos_3 <- pos %>% 
+  filter(align_file == "VT44110" & 
+           strand == "positive") %>% 
+  mutate(start = raw_position + 1) %>%
+  mutate(end = start + 5) 
+head(pos_3)
+
+sub.test <- list()
+for (i in 1:nrow(pos_3)) {
+  idx = grep(pos_3$species[i], names(raw_test))  
+  sub.test[[i]] <- rownames_to_column(as.data.frame(subseq(raw_test[idx], pos_3$start[i], pos_3$end[i])))
+sub.test[[i]]$raw_position <- pos_3$raw_position[i]
+}
+
+all_motifs <- do.call(rbind, sub.test)
+
+## Here is the dataframe
+all_motifs$x
+```
+
+## Test III:
+
+This is just going to test the PWM file. I am going to use the R program `PWMEnrich` to test. 
+
+```{r}
+
+zelda_fm <- readMotifs("../data/Dmel_pwms/zelda_.fm")
+
+```{r}
+
+##############################
+## Isolate the probabilities
+###############################
+
+datalist = list()
+
+for (i in 1:nrow(pos_2)) {
+  sub.test <- subseq(test, pos_2$start[i], pos_2$end[i])
+  
+## Gives consensus matrix at each position
+  vis1 <- rownames_to_column(
+    as.data.frame(
+      consensusMatrix(sub.test, 
+                    baseOnly =T, 
+                    as.prob = TRUE)))
+
+  colnames(vis1)[2:7] <- 1:6
+  data_long <- gather(vis1, "motif_position", "prob", 2:7)
+  data_long$align_pos <- pos_2$align_position[i]
+  datalist[[i]] <- data_long
+}
+
+prob_dataframe = do.call(rbind, datalist)
+```
+
+
+## Looking at just the ## of occurances
+
+```{r}
+## - [ ] The score might be important to keep around. I may have to up the threshold to 50% so that the score can be kept in mind. 
+
+## how many fimes each TFBS was cound in each alignment
+occur <- read.csv("../data/occurance_zelda.csv")
+occur <- occur[,-1]
+colnames(occur)[1] <- "species"
+head(occur)
+
+##################################################
+## Dictionary find and replace lane ID with species
+##################################################\
+
+species_key <- read.csv("../data/montium_species_laneID.csv")
+species <- species_key$species
+lane <- species_key$lane_ID
+
+##pos
+for(j in seq_along(lane)){
+  pos$species <- gsub(lane[j], species[j], pos$species)
+}
+
+##occur
+for(j in seq_along(lane)) {
+  occur$species <- gsub(lane[j], species[j], occur$species)
+}
+
+#############################################
+##  Making new column based on species number
+############################################
+
+occur$species_count  <- str_count(occur$species, 'D.')
+head(occur)
+````
+
+## Exploritory Analysis
+
+```{r}
+
+## There are only 334 / 31388 that have all 24 species
+occur %>%
+  filter(species_count == 24) %>%
+  tally()
+```
+
+### Distribution
+
+
+```{r}
+occur %>%
+  group_by(species_count) %>%
+  tally() %>%
+  ggplot(., aes(species_count, n)) +
+  geom_bar(stat = "identity")
+
+occur %>%
+  group_by(species_count, species) %>%
+  filter(species_count == 1) %>%
+  tally() %>%
+  ggplot(., aes(species, n)) +
+  geom_bar(stat = "identity") +
+  coord_flip()
+```
+
+We really need to classify each of the groups of species.
+
+
+We need to include information about the sequences in these regions. For example, are there gaps in these regions that span.
+
+Questions and Next Steps
+
+Not sure the math involved to get the exact number of how many species groups can be solved, bu
+
+```{r}
+## summary(as.factor(occur$species)) #9009 species groups.
+```
+
+We need to match the tree with the motif data
+
+```{r}
+
+## These species need to be fixed because they are not in the tree :
+## D. triauraria_A (motifs) to triauraria_1 (tree)
+## D. aurauia_2 (motifs) change to D. auraria  (tree)
+## D. kikkawai remove (not in tree)
+## D. bakoue remove (not in tree)
+
+occur$species <- gsub("triauraria_A", "triauraria_1", occur$species)
+occur$species <- gsub("D. auraria_2", "D. auraria", occur$species)
+occur$species <- gsub("D. kikkawai", "NA", occur$species)
+occur$species <- gsub("D. bakoue", "NA", occur$species)
+```
+
+
+## Tree
+
+Bring in tree and trim labels. The tree was created from the Michael Turelli lab.
+
+```{r}
+tree <- read.tree("../data/tree/montium_phylogram_newick.tre")
+
+## Before trimming
+tree$tip.label
+
+## Regions to remove
+tips_remove <- c("DFengkainesis", "ananassae", "biarmipes","DTrapezifons","DParvula","DOrosa","DOgumai", "DOhnishii", "DLini","DMalagassya","DSeguyi", "DNikananu", "DBurlai", "elegans","biarmipes","simulans", "DGreeni", "DTruncata", "DTani", "DBicornuta", "DBocki", "triauraria_2_bronski", "DBarbarae", "DBocqueti", "DChauvacae", "DCurta_N", "DDiplacantha", "Drosophila_melanogaster")
+
+## Remove regions
+prunetree <- drop.tip(tree,tips_remove)
+
+## Clean up names to match other data
+prunetree$tip.label <- gsub("_bronski", "", prunetree$tip.label)
+prunetree$tip.label <- paste0("D. ", prunetree$tip.label)
+
+
+## Basic Bitch Tree
+ggtree(prunetree) + 
+  geom_text(aes(label = label), hjust=-.3) + 
+  ggplot2::xlim(0, 0.07)
+
+write.tree(prunetree, file = "../data/tree/cleanedTree.tre")
+
+str(prunetree)
+```
+
+
+## Creating a distence matrix
+
+```{r}
+distance_matrix <- cophenetic.phylo(prunetree)
+
+library(superheat)
+
+superheat(distance_matrix, 
+          scale = TRUE,
+          bottom.label.text.angle = 90,
+          row.dendrogram = TRUE,
+          grid.hline = FALSE,
+          grid.vline = FALSE)
+```
+
+
+```{r}
+## Visualize
+ggtree(prunetree) + 
+  geom_text2(aes(subset = isTip, 
+                 label = node), hjust = -.3) + 
+  geom_tiplab(hjust = -.4) + 
+  ggplot2::xlim(0, 0.07)
+
+## Find the most Recent common ancestor
+## MRCA(tree, tip = c("D. lacteicornis", "D. asahinai"))
+
+## Then you need to basically create a function that labels each of the nodes.
+## Make a dictionary dataframe
+tip_dictionary <- as.data.frame(cbind(label = prunetree$tip.label, tip_number = 1:length(prunetree$tip.label)))
+
+## Add new column based on species groups
+occur$species_labels <- occur$species
+
+## Find and replace
+for(j in seq_along(tip_dictionary$label)){
+  occur$species_labels <- gsub(tip_dictionary$label[j], tip_dictionary$tip_number[j], occur$species_labels)
+}
+
+head(occur)
+## occur$species_labels
+
+## This will be a good strategy.  We need to name by 
+cls <- list(c1 = c(22, 20, 33),
+            c2 = 7)
+
+tree <- groupOTU(prunetree, cls)
+library("colorspace")
+ggtree(tree, aes(color=group, linetype=group)) + geom_tiplab() +
+     scale_color_manual(values=c("black", rainbow_hcl(4))) + theme(legend.position="right")
+
+## Another way to label nodes
+tree <- groupClade(prunetree, node=c(31,32, 35,36,37,42,43))
+ggtree(tree, aes(color = group)) + 
+  scale_color_manual(values = c("black", rep("pink",8)))
+```
+
+### Making the species names 
+
+```{r}
+# summary(as.factor(occur$species))
+test <- paste0("c", occur$species[50])
+test2  <- eval(parse(text = test)) ## This doesn't work with one species. 
+
+
+```
+
+## What needs to be done
+
+- [ ] We need to categorize which changes are clade specific and which regions appear random. How often does this occur?
+-  [ ] There needs to be a way automatically way to view TFBS position presence of each position on tree
+- [ ] There needs to be a way to interact with the alignment files.  I think the best way to do this is have the files seperate and create a tool to grab the regions of interest. We need this for two reasons: 1. Since the majority of sequences are made up of regions that have 8 or below species containing a specific TFBS, most with just one species, we need to have a way to understand if these are because of lack of sequence from sequencing / processing. 2. We also need a way to look at how a TFBS motif modulates in time, so it would be great to grab all the sequences in certain regions.

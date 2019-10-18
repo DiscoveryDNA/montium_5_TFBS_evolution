@@ -1,0 +1,228 @@
+---
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+What else needs to be one here?
+
+We need to figure out why some regions have more than 24 species represented in each region.
+
+https://www.biostars.org/p/76701/
+
+- You need to combine 
+
+```{r}
+
+library(reshape2)
+library(tidyverse)
+library(ggplot2); theme_set(theme_bw())
+library(reshape2)
+library(googledrive)
+
+## Read directly from Google drive
+## file_list <- drive_ls(as_id("1fD_Ag5JZRtp1-4i_Qg9U76oPu5tmdti8"))
+## drive_download(as_id(file_list$id[1]), overwrite = TRUE)
+## read_csv("VT32774_final_raw.fa.csv")
+  
+
+```
+
+
+## Part 0: Complile all data or just read in the compiled data
+
+The below code reads in all the data and compiles into a single data file. This has been done previously, so all that is needed now is to read in the file. 
+
+### Part 0 - Option 1: compile data
+```{r}
+## Uncomment to compile all data or just read in the data in the next cell
+# directory <- "~/../../Volumes/ciera_2/2.re-running_whole_pipeline/data/output/bcd_2019_10_01/bcd/"
+# 
+# ## List files in directory for read in
+# file_list <- list.files(directory)
+# length(file_list)
+
+# ## takes about 25 min
+# for (file in file_list){
+#        
+#   # if the merged dataset doesn't exist, create it
+#   if (!exists("dataset")){
+#     dataset <- read.csv(paste0(directory, file), header=TRUE)
+#     print("Does not exist")
+#   }
+#    
+#   # if the merged dataset does exist, append to it
+#   if (exists("dataset")){
+#     temp_dataset <-read.csv(paste0(directory, file), header=TRUE)
+#     dataset<-rbind(dataset, temp_dataset)
+#     rm(temp_dataset)
+#   }
+#  
+# }
+# 
+# dim(dataset)  
+# head(dataset)
+# write.csv(dataset, paste0(directory, "all_data_bcd_2019_10_01.csv"))
+
+```
+
+## Part 0 - Option 2: 
+
+Read in the dataset from one datafile.
+```{r}
+dataset <- read.csv("~/../../Volumes/ciera_2/2.re-running_whole_pipeline/data/output/bcd_2019_10_01/bcd/all_data_bcd_2019_10_01.csv") 
+
+## [ ] put into googledrive and download straight in.
+```
+
+```{r}
+## Just so you can play with data inputed files without reading them in again
+dataset1 <- dataset
+
+## Ways to view and understand dataset
+head(dataset1)
+dim(dataset1)
+str(dataset1)
+colnames(dataset1)
+
+head(dataset)
+dataset1 %>% 
+  separate(species_y, c("region", "enhancer_func", "species")) %>%
+  select(-c("X")) 
+
+dataset1 <- dataset1 %>% 
+  separate(species_y, c("region", "enhancer_func", "species")) %>% 
+ 
+  select(-c("X")) ##gets rid of column X
+
+dataset1$TFBS_called <- ifelse(dataset1$score >= 7, "yes", "no")
+
+head(dataset1)
+```
+
+## How many positions per region, per align_pos?
+
+```{r}
+## What the is going on here? Why are there more than 24?
+dataset1$raw_seq <- toupper(dataset1$raw_seq)
+dataset1 %>%
+  group_by(region, align_position) %>%
+  tally() %>%
+  group_by(n) %>%
+  tally() %>%
+  ggplot(., aes(n, nn)) +
+  geom_bar(stat = "identity") 
+```
+
+## This us cool, this means that there are about 15,000 regions that
+## have all 24 species represented!
+dataset1 %>%
+  group_by(region, align_position) %>%
+  tally() %>%
+  group_by(n) %>%
+  tally() %>%  print(n=60)
+  ggplot(., aes(n, nn)) +
+  geom_bar(stat = "identity") + 
+  xlim(0,26) +
+  theme(text = element_text(size = 17),
+        plot.title = element_text( size=14)) +
+  labs(title="Represenative species at each alignment position \n", x = "number of species", y = "aligned motif regions") 
+```
+
+## How many times was the TFBS called
+
+```{r}
+## First we need to filter just the ones that have 24 represenative species
+## all the regions that will be used to filter by 
+
+dataset1 %>%
+  group_by(region, align_position, strand) %>%
+  tally() %>%
+  filter(n == 24) 
+
+### OMG I THINK THIS WORKED
+### Reference: https://stackoverflow.com/questions/26573285/using-filter-with-count
+only_24 <- dataset1 %>%
+  group_by(region, align_position, strand) %>%
+  filter(n() == 24)
+
+## Test if it worked:
+only_24 %>%
+  group_by(region, align_position) %>%
+  tally() %>%
+  group_by(n) %>%
+  tally() %>%  
+  ggplot(., aes(n, nn)) +
+  geom_bar(stat = "identity") + 
+  xlim(0,26) +
+  theme(text = element_text(size = 17),
+        plot.title = element_text( size=14)) +
+  labs(title="Represenative species at each alignment position \n", x = "number of species", y = "aligned motif regions") 
+
+### Now everything will be a fraction of 24
+only_24 %>%
+  filter(TFBS_called == 'yes') %>%
+  group_by(region, strand, align_position, TFBS_called) %>%
+  tally() %>%
+  group_by(n) %>%
+  mutate(ratio = n/24) %>%
+  group_by(ratio) %>%
+  tally() %>%
+  ggplot(., aes(ratio, n)) +
+  geom_bar(stat = "identity") + 
+  theme(text = element_text(size = 14),
+        plot.title = element_text( size=14)) +
+  labs(title="In each 24 species aligned motif set, \n what is the ratio bcd motifs? ", x = "ratio of bcd to non-bcd", y = "aligned motif regions") 
+```
+
+## What about overlap sights?
+
+```{r}
+rawseq <- dataset1 %>%
+  group_by(raw_seq)
+rawseq
+
+#convert all factors to lowercase
+rawseq$seq_lower = tolower(rawseq$raw_seq)
+rawseq
+
+#group by lowercase factors and sum over n
+grouped_seq <- rawseq %>%
+  group_by(seq_lower) %>% 
+  mutate(n= n()) %>% 
+     distinct(seq_lower, .keep_all=TRUE)
+
+grouped_seq
+
+#order by decreasing n
+ordered_seq <- grouped_seq[with(grouped_seq, order(-n)), ]
+ordered_seq
+
+#create a column containing lists of bases
+ordered_seq$split_seq = strsplit(ordered_seq$seq_lower, "")
+ordered_seq
+
+#assign a column to each base based on position
+pos_seq <- ordered_seq %>% 
+  separate(split_seq, c("pos0", "pos1", "pos2", "pos3", "pos4", "pos5", "pos6")) %>%
+  select(-c("pos0"))
+pos_seq
+
+pos_seq_reshaped <- melt(pos_seq, measure.vars = c("pos1", "pos2", "pos3", "pos4", "pos5", "pos6"))
+
+pos_seq_groups <- pos_seq_reshaped %>% group_by(enhancer_func, variable) %>%
+             mutate(group_size = n()) %>%
+             group_by(variable, value, enhancer_func) %>%
+             summarise(perc = n()/max(group_size))
+
+colnames(pos_seq_groups)[colnames(pos_seq_groups)=="variable"] <- "positions"
+colnames(pos_seq_groups)[colnames(pos_seq_groups)=="value"] <- "nucleotides"
+colnames(pos_seq_groups)[colnames(pos_seq_groups)=="perc"] <- "percentage"
+
+pos_seq_groups
+
+ggplot(data=pos_seq_groups, aes(fill=enhancer_func, y=percentage, x=nucleotides)) + 
+  geom_bar(stat="identity", position="dodge") + 
+  scale_y_continuous(labels = scales::percent) + 
+  facet_grid(~positions)
+```

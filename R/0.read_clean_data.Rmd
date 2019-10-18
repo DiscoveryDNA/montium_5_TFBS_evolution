@@ -1,0 +1,94 @@
+---
+title: "R Notebook"
+output: html_notebook
+editor_options: 
+  chunk_output_type: console
+---
+
+## Part 0: Complile all data or just read in the compiled data
+
+The below code reads in all the data and compiles into a single data file. This has been done previously, so all that is needed now is to read in the file. 
+
+### Part 0 - Option 1: compile data
+
+```{r}
+## Libraries
+library(reshape2)
+library(tidyverse)
+
+
+## Uncomment to compile all data or just read in the data in the next cell
+# directory <- "~/../../Volumes/ciera_2/2.re-running_whole_pipeline/data/output/bcd_2019_10_01/bcd/"
+# 
+# ## List files in directory for read in
+# file_list <- list.files(directory)
+# length(file_list)
+
+# ## takes about 25 min
+# for (file in file_list){
+#        
+#   # if the merged dataset doesn't exist, create it
+#   if (!exists("dataset")){
+#     dataset <- read.csv(paste0(directory, file), header=TRUE)
+#     print("Does not exist")
+#   }
+#    
+#   # if the merged dataset does exist, append to it
+#   if (exists("dataset")){
+#     temp_dataset <-read.csv(paste0(directory, file), header=TRUE)
+#     dataset<-rbind(dataset, temp_dataset)
+#     rm(temp_dataset)
+#   }
+#  
+# }
+# 
+# dim(dataset)  
+# head(dataset)
+# write.csv(dataset, paste0(directory, "all_data_bcd_2019_10_01.csv"))
+
+```
+
+## Part 0 - Option 2: 
+
+Read in the dataset from one datafile.
+```{r}
+dataset <- read.csv("../data/all_data_bcd_2019_10_01.csv") 
+
+## Read directly from Google drive
+## file_list <- drive_ls(as_id("1Xs8Yyrvb-ZtTHkYzrvpTSDQqUiLyaQmy"))
+## drive_download(as_id(file_list$id[1]), overwrite = TRUE)
+## read_csv("VT32774_final_raw.fa.csv")
+```
+
+```{r}
+## Just so you can play with data inputed files without reading them in again
+dataset1 <- dataset
+
+## Ways to view and understand dataset
+head(dataset1)
+dim(dataset1)
+str(dataset1)
+colnames(dataset1)
+
+head(dataset1)
+dataset1 %>% 
+  separate(species_y, c("region", "enhancer_func", "species")) %>%
+  select(-c("X")) 
+
+dataset1 <- dataset1 %>% 
+  separate(species_y, c("region", "enhancer_func", "species")) %>% 
+  select(-c("X", "X.1")) ##gets rid of column X
+
+## Make a new column that labels "yes" to any score above 7
+dataset1$TFBS_called <- ifelse(dataset1$score >= 7, "yes", "no")
+
+head(dataset1)
+
+## Change all nucleotides to uppercase
+dataset1$raw_seq = toupper(dataset1$raw_seq)
+dataset1$before_seq = toupper(dataset1$before_seq)
+dataset1$after_seq = toupper(dataset1$after_seq)
+
+write.csv(dataset1, "../data/all_data_bcd_2019_10_01_clean.csv", row.names = FALSE)
+```
+

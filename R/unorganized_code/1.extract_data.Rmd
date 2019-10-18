@@ -1,0 +1,151 @@
+---
+title: "R Notebook"
+output: html_notebook
+editor_options: 
+  chunk_output_type: console
+---
+
+## Purpose
+For Zoe to start playing with the data.
+
+## About Data
+
+Niharika output all the files and now we have to see what we have and do some basic quality control. 
+
+-  strand: which direction the motif is read
+-  align_position: where in the alignment the motif starts
+-  score: the higher the score the more likely the motif is at this position
+-  species_y: the id for the sequence seperated by "|". Code `region|enhancer_function|species|original_strand|length_of_raw_seq`. 
+-  raw_position: where in the raw_position the motif starts
+-  motif: if it was called as a motif
+- raw_seq: the motif at this position
+- before_seq: the 6 letters before the raw_seq
+- after_seq: the 6 positions after the raw_seq
+
+## About R
+
+After you mess with the R code a bit, you will notice that almost everything you do in Python you can do in R the syntax is just different. Try reading this guide: http://tidynomicon.tech/.
+
+Asking for help: For R, just google, the new R syntax was is called "tidy" so whatever question you ask when you Goolge try adding the work "tidy" and you will get the new easier to read tidy version of how to code it. 
+
+Let's start with BCD, each region is a seperate file. Go to Session > Set Working Directory > To Source File Location.
+
+Check out this guide specially made for users going from python to R: [A Brief Introduction to R for People Who Count From Zero](http://tidynomicon.tech/)
+
+
+```{r}
+library(reshape2)
+library(tidyverse)
+library(ggplot2); theme_set(theme_bw())
+
+## List files in directory for read in
+f <- list.files("~/Desktop/TFBS_team/TFBS_datasets/output_2019_09_03/bcd/")
+
+length(f)
+```
+
+## Start with a subset
+
+```{r}
+## subset
+## Just grab ten files
+file_list <- f[1:10]
+
+for (file in file_list){
+       
+  # if the merged dataset doesn't exist, create it
+  if (!exists("dataset")){
+    dataset <- read.csv(paste0("../data/output_2019_09_03/bcd/", file), header=TRUE)
+  }
+   
+  # if the merged dataset does exist, append to it
+  if (exists("dataset")){
+    temp_dataset <-read.csv(paste0("../data/output_2019_09_03/bcd/", file), header=TRUE)
+    dataset<-rbind(dataset, temp_dataset)
+    rm(temp_dataset)
+  }
+ 
+}
+
+dim(dataset)  
+head(dataset)
+
+## Checkpoint
+## write.csv(dataset, file = "../data/bcd_subset_20190903.csv")
+```
+
+
+This is just formatting the dataset so it makes a bit more sense.  
+
+- [ ] Make sure you understand all this code.
+```{r}
+## Just so you can play with data inputed files without reading them in again
+dataset1 <- dataset
+
+## Ways to view and understand dataset
+head(dataset1)
+dim(dataset1)
+str(dataset1)
+colnames(dataset1)
+
+## split ID to get region, enhancer_func, and species
+## "%>%" is a pipe, essentially it means "into"
+## This first one pipes everything and just writes out
+## What is the code doing below?
+head(dataset)
+dataset1 %>% 
+  separate(species_y, c("region", "enhancer_func", "species")) %>%
+  select(-c("X")) 
+
+## This second fucntion does the same thing but writes over the variabl to update.  
+## Notice how R uses an arrow to name and re-name variables? 
+
+dataset1 <- dataset1 %>% 
+  separate(species_y, c("region", "enhancer_func", "species")) %>%
+  select(-c("X"))
+
+## Check it out
+
+head(dataset1)
+```
+
+Looking into the data a bit more. 
+
+- [ ] understand what each is doing?
+
+```{r}
+dataset1 %>%
+  group_by(before_seq, motif.) %>%
+  tally()
+
+dataset1 %>%
+  group_by(region, motif.) %>%
+  tally()
+
+test <- dataset1 %>%
+  filter(motif. == "yes" & strand == "positive") %>%
+  group_by(raw_seq, after_seq, score) %>%
+  arrange(desc(score, strand))
+
+dataset1 %>%
+  filter(motif. == "yes") %>%
+  ggplot(., aes(score, color = motif.)) +
+  geom_density()
+
+dataset1 %>%
+  ggplot(., aes(score, color = motif.)) +
+  geom_density()
+```
+
+## Things to try
+
+
+- [ ] How many unique species names are there?
+- [ ] Is there any patterns of int the raw_seq sequences?
+- [ ] Use this data to play with ggplot2
+- [ ] play with colors
+- [ ] plot the 
+
+```{r}
+
+```

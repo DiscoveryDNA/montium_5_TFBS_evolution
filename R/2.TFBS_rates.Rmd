@@ -1,0 +1,56 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+
+```{r}
+## Visualize
+ggtree(prunetree) + 
+  geom_text2(aes(subset = isTip, 
+                 label = node), hjust = -.3) + 
+  geom_tiplab(hjust = -.4) + 
+  ggplot2::xlim(0, 0.07)
+
+## Find the most Recent common ancestor
+## MRCA(tree, tip = c("D. lacteicornis", "D. asahinai"))
+
+## Then you need to basically create a function that labels each of the nodes.
+## Make a dictionary dataframe
+tip_dictionary <- as.data.frame(cbind(label = prunetree$tip.label, tip_number = 1:length(prunetree$tip.label)))
+
+## Add new column based on species groups
+occur$species_labels <- occur$species
+
+## Find and replace
+for(j in seq_along(tip_dictionary$label)){
+  occur$species_labels <- gsub(tip_dictionary$label[j], tip_dictionary$tip_number[j], occur$species_labels)
+}
+
+head(occur)
+## occur$species_labels
+
+## This will be a good strategy.  We need to name by 
+cls <- list(c1 = c(22, 20, 33),
+            c2 = 7)
+
+tree <- groupOTU(prunetree, cls)
+library("colorspace")
+ggtree(tree, aes(color=group, linetype=group)) + geom_tiplab() +
+     scale_color_manual(values=c("black", rainbow_hcl(4))) + theme(legend.position="right")
+
+## Another way to label nodes
+tree <- groupClade(prunetree, node=c(31,32, 35,36,37,42,43))
+ggtree(tree, aes(color = group)) + 
+  scale_color_manual(values = c("black", rep("pink",8)))
+```
+
+### Making the species names 
+
+```{r}
+# summary(as.factor(occur$species))
+test <- paste0("c", occur$species[50])
+test2  <- eval(parse(text = test)) ## This doesn't work with one species. 
+
+
+```

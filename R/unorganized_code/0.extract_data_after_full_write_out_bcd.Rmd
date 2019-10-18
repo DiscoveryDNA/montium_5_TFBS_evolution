@@ -1,0 +1,246 @@
+---
+title: "Testing BCD Output"
+output:
+  pdf_document: default
+  html_notebook: default
+editor_options:
+  chunk_output_type: console
+---
+
+Date: OCtober 1, 2019
+
+Purpose: All the files have been written out for BCD.
+
+## Summary
+
+**The Good**:
+
+1. The motifs being extracted are correct. For example the motifs that are scored above the threshold are all bcd motifs.  This is good!
+2. The motif_extraction program is extracting all orthologous regions of each species, with the exception of when there are blanks in the align_positions of other species.
+
+**The Bad**:
+
+1. Whatever part of the map_extration program is choosing the what to extract is wrong.  I can not figure out how it is choosing these regions, but for sure it is not based on threshold. There are way too many. 
+2. The marking of yes and no for motifs has nothing to do with being above the 7 threshold. 
+
+
+## Part 1 - read in files and clean up a bit
+
+Each region is a seperate file. 
+
+```{r}
+library(reshape2)
+library(tidyverse)
+library(ggplot2); theme_set(theme_bw())
+
+f <- list.files("~/../../Volumes/ciera_2/2.re-running_whole_pipeline/output/bcd/")
+length(f) 
+
+```
+
+Just a subset 
+```{r, eval = FALSE}
+## subset
+file_list <- f[1:100]
+
+## Get all files and put into a single list
+## To do run with 500, it takes ~20 min 1:20
+
+
+for (file in file_list){
+       
+  # if the merged dataset doesn't exist, create it
+  if (!exists("dataset")){
+    dataset <- read.csv(paste0("../../2.re-running_whole_pipeline/output/bcd/", file), header=TRUE)
+  }
+   
+  # if the merged dataset does exist, append to it
+  if (exists("dataset")){
+    temp_dataset <-read.csv(paste0("../../2.re-running_whole_pipeline/output/bcd/", file), header=TRUE)
+    dataset<-rbind(dataset, temp_dataset)
+    rm(temp_dataset)
+  }
+ 
+}
+
+dim(dataset)  
+
+## Checkpoint
+## write.csv(dataset, file = "../data/bcd_100_subset_20190903.csv")
+```
+
+Clean up the dataframe for better handling. Renaming ect.
+```{r}
+## dataset <- read.csv("../data/bcd_100_subset_20190903.csv")
+dataset1 <- dataset
+
+head(dataset1)
+dim(dataset1)
+
+## split ID to get region, enhancer_func, and species
+
+dataset1 <- dataset1 %>%  
+  separate(species_y, c("region", "enhancer_func", "species")) %>%
+  select(-c("X"))
+
+dataset1$raw_seq <- toupper(dataset1$raw_seq)
+```
+
+## Part 2: Motif Column
+
+I will make a new motif column based on score and check.
+
+```{r}
+
+## Make a new column that labels "yes" to any score above 7
+dataset1$new_motif <- ifelse(dataset1$score >= 7, "yes", "no")
+
+## What it should look like.
+dataset1 %>%
+  ggplot(., aes(score, color = new_motif)) +
+  geom_density()
+
+## What it should look like for all the top motifs
+dataset1 %>%
+  filter(score >= 7.0) %>%
+  group_by(raw_seq, new_motif) %>%
+  tally() %>%
+  ggplot(., aes(raw_seq,n, fill = new_motif)) +
+  geom_bar(stat = "identity") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+## Looking at one regions at a time
+
+This is looking at just one region to see if I can figure out what is going on. 
+
+````{r}
+### Looking at the "yeses"
+## Scores look correct when using the new_motif()
+dataset1 %>% 
+  filter(region == unique(dataset1$region)[6] & new_motif == "yes") %>%
+  ggplot(., aes(align_position, species, color = score)) +
+  geom_point() + scale_color_viridis_c() + facet_grid(.~strand)
+
+dataset1 %>% 
+  filter(region == unique(dataset1$region)[6]) %>%
+  ggplot(., aes(align_position, species, color = score)) +
+  geom_point() + scale_color_viridis_c() + facet_grid(.~strand)
+```
+
+When you look at everything that was extracted you see a few things.
+
+
+```{r}
+## This is what the map_motif extracted. 
+
+dataset1 %>% 
+  filter(region == unique(dataset1$region)[6]) %>%
+  ggplot(., aes(align_position, species, color = score)) +
+  geom_point() + scale_color_viridis_c() + facet_grid(.~strand)
+
+
+## We should only have the
+dataset1 %>% 
+  filter(region == unique(dataset1$region)[10]) %>%
+  ggplot(., aes(align_position, species, color = new_motif)) +
+  geom_point() + facet_grid(.~strand)
+
+```
+
+## Part 3
+
+Some work trying to quantify the motifs.
+
+Start with asking - How many sites are shared by all species?
+
+```{r}
+
+dataset1 %>%
+  group_by(align_position, region) %>%
+  filter(new_motif  == "yes") %>%
+  tally()
+```
+
+How many sites include all species?  Yes or no?
+
+```{r}
+
+## How can there be more than 24?
+dataset1 %>%
+  group_by(align_position, region, strand) %>%
+  tally() %>%
+  ggplot(., aes(n)) +
+    geom_density()
+
+## - [ ] Looks like it is all the same region, not sure what is going on here?
+dataset1 %>%
+  group_by(align_position, region, strand, raw_seq) %>%
+  tally() %>%
+  filter(n > 24)  %>%
+  ggplot(., aes(n)) +
+    geom_density()
+
+dataset1 %>% 
+  filter(region == "VT0849") %>%
+  ggplot(., aes(align_position, species, color = new_motif)) +
+  geom_point()  + facet_grid(.~strand)
+
+```
+
+I am just going to continue by subsetting above 24 till I figure out what is going on here.
+
+While I am at it I am also going to remove all instances where there are only regions with less than two positions. 
+
+```{r}
+dataset1 %>%
+  group_by(align_position, region, strand, new_motif, enhancer_func) %>%
+  tally() %>%
+  filter(n <= 24 & n > 2) %>%
+  ggplot(., aes(n, color = new_motif)) +
+    geom_density() +
+    facet_grid(.~enhancer_func)
+
+```
+
+Is there are a difference for how many 
+```{r}
+dataset1 %>%
+  group_by(enhancer_func,raw_seq) %>%
+  tally() %>%
+  arrange(-n) %>%
+  top_n(40) %>%
+  ggplot(., aes(raw_seq, n, fill = enhancer_func)) +
+    geom_bar(stat = "identity", position = "dodge") +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+
+## How many motifs Avg in each region?
+## There are just more TFBS per region
+dataset1 %>%
+  group_by(enhancer_func) %>%
+  tally()
+
+## Are the top motifs different between function and non-function?
+
+dataset1 %>%
+  group_by(enhancer_func,raw_seq) %>%
+  filter(enhancer_func == 1) %>%
+  tally() %>%
+  top_n(40) %>%
+  arrange(-n) %>%
+  ggplot(., aes(reorder(raw_seq,-n), n)) +
+    geom_bar(stat = "identity", position = "dodge") +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+Some questions I want to ask: 
+
+1. Are these sites more conserved than surrounding regions?
+  - Try just regions.
+  - Get the simulated random sample control 
+  - Get random region control
+2. Look at positions and how they change
+
+
+```{r}

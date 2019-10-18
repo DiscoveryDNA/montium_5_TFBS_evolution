@@ -1,0 +1,254 @@
+---
+title: "R Notebook"
+editor_options: 
+  chunk_output_type: console
+---
+
+## Purpose
+
+The purpose of this notebook is to perform quality control on the data to understand exactly what we have outputed. 
+
+
+```{r}
+## Libraries
+## Read in cleaned data 
+
+library(reshape2)
+library(tidyverse)
+library(ggplot2); theme_set(theme_bw())
+
+dataset1 <- read.csv("../data/all_data_bcd_2019_10_01_clean.csv")
+head(dataset1)
+```
+
+## Testing scoring 
+
+Something is up here, yes, the main motifs, TAAGCC, TAATCC, TAATCT and TTATCC are represented mostly, but why and the hell are there 2 represenatives from these other categories? Looking closer at these weirdos, it seems like it all comes from the same region (VT40027) and the same species (MEMB005D). I think I will just remove this region.
+
+
+```{r}
+dim(dataset1)
+
+dataset1 %>%
+  filter(score >= 7) %>%
+  group_by(raw_seq, TFBS_called) %>%
+  tally() %>%
+  ggplot(., aes(raw_seq,n)) +
+  geom_bar(stat = "identity") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+
+## For example:
+weirdos <- c("ATGCCA", "CATACA", "GAGGGA", "TCGTTC", "TCGTTC", "TGCTTT", "TTCGC")
+dataset1 %>%
+  filter(score >= 7 & raw_seq %in% weirdos)
+
+## Remove this weird region
+
+dataset1 <- dataset1 %>%
+  filter(region != "VT40027")
+
+## Retest with weird removed region
+dataset1 %>%
+  filter(score >= 7) %>%
+  group_by(raw_seq, TFBS_called) %>%
+  tally() %>%
+  ggplot(., aes(raw_seq,n)) +
+  geom_bar(stat = "identity") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+## Testing Orthologous region grabbing
+
+It looks to be working very well, except that sometimes it doesn't.
+
+Let's look at a few examples
+
+
+### Example 1
+
+This graph in the negative strand there is a lone called motif, the other orthologous regions were not grabbed. This is likely due to that species (MEMB006B) having an inserted region. 
+
+```{r}
+
+### Looking at the "yeses"
+## Scores look correct when using the called motif
+
+## With filter
+dataset1 %>% 
+  filter(region == unique(dataset1$region)[6] & TFBS_called == "yes") %>%
+  ggplot(., aes(align_position, species)) +
+  geom_point() + facet_grid(.~strand) +
+    theme(text = element_text(size = 17),
+          axis.text.y = element_text(size = 10),
+        plot.title = element_text( size=14)) +
+  labs(title="All called bcd motif (score >7)", x = "alignment position", y = "species") 
+
+## Without filter
+dataset1 %>% 
+  filter(region == unique(dataset1$region)[6]) %>%
+  ggplot(., aes(align_position, species, color = score)) +
+  geom_point() + scale_color_viridis_c() + facet_grid(.~strand) +
+      theme(text = element_text(size = 17),
+      axis.text.y = element_text(size = 10),
+      plot.title = element_text( size=14)) +
+  labs(title="All motifs", x = "alignment position", y = "species") 
+
+dataset1 %>% 
+  filter(region == unique(dataset1$region)[6] & species == "MEMB006B") %>%
+  filter(strand == "negative" & TFBS_called == "yes")
+```
+
+Example 1 brings up another problem, **there are duplicate rows in this example**.  How many identical rows are there and is there a pattern to this? This could be easily fixed by removing duplicate rows, but we should talk to Niharika.  
+
+For example see the graph below:
+
+```{r}
+dataset1 %>%
+  group_by(region, align_position) %>%
+  tally() %>%
+  group_by(n) %>%
+  tally() %>%
+  ggplot(., aes(n, nn)) +
+  geom_bar(stat = "identity") +
+      theme(text = element_text(size = 17),
+      axis.text.y = element_text(size = 10),
+      plot.title = element_text( size=20)) +
+ labs(title="More than 24 species in each orthologous TFBS region", y = "orthologous TFBS regions", x = "# of species in each region") +
+  xlim(0, 25)
+
+```
+
+Now let's check how many duplicated rows there are in our dataset?
+
+**Conclusion**: There were 273,798 duplicated motif represented in this data. 
+
+**Next Steps**: Just remove for now, but have Niharika fix in the pipeline. 
+
+```{r}
+# Check original
+nrow(dataset1)
+
+## remove duplicated rows
+dataset2 <- dataset1 %>%
+  distinct() 
+
+## How many left?
+nrow(dataset1_dup_rm)
+
+## How many were removed?
+nrow(dataset1) - nrow(dataset2)
+
+## Visualize
+dataset2 %>%
+  group_by(region, align_position, strand) %>%
+  tally() %>%
+  group_by(n) %>%
+  tally() %>%
+  ggplot(., aes(n, nn)) +
+  geom_bar(stat = "identity") +
+      theme(text = element_text(size = 17),
+      axis.text.y = element_text(size = 10),
+      plot.title = element_text( size=20)) +
+  labs(title="More than 24 species in each orthologous TFBS region", y = "orthologous TFBS regions", x = "# of species in each region") 
+```
+
+## Example 2
+
+This alignment has a lot going on. First off there are a lot of bcd TFBS being called. 
+```{r}
+## With filter
+dataset2 %>% 
+  filter(region == unique(dataset1$region)[7] & TFBS_called == "yes") %>%
+  ggplot(., aes(align_position, species)) +
+  geom_point() + facet_grid(.~strand) +
+    theme(text = element_text(size = 17),
+          axis.text.y = element_text(size = 10),
+        plot.title = element_text( size=14)) +
+  labs(title="All called bcd motif (score >7)", x = "alignment position", y = "species") 
+
+## Without filter
+dataset1 %>% 
+  filter(region == unique(dataset1$region)[7]) %>%
+  ggplot(., aes(align_position, species, color = score)) +
+  geom_point() + scale_color_viridis_c() + facet_grid(.~strand) +
+      theme(text = element_text(size = 17),
+      axis.text.y = element_text(size = 10),
+      plot.title = element_text( size=14)) +
+  labs(title="All motifs", x = "alignment position", y = "species") 
+```
+
+There is a lot going on in this example, lets take a closer look:
+
+```{r}
+dataset1 %>% 
+  filter(region == unique(dataset1$region)[7]) %>%
+  ggplot(., aes(align_position, species, color = score)) +
+  geom_point() + scale_color_viridis_c() + facet_grid(.~strand) +
+      theme(text = element_text(size = 17),
+      axis.text.y = element_text(size = 10),
+      plot.title = element_text( size=14)) +
+  labs(title="All motifs", x = "alignment position", y = "species") 
+  xlim(400, 600)
+
+```
+
+When looking closer then going to the alignment file, you see clearly that some of the regions are just going to be problems becauase of low conservation. It would be good to caluculate genetic variablity and rate of evolution across the entire region to get an idea of what is removed. Some questions that we really need to think about and understand are 1. **Can we only really use the dataset when we have 24 represenative regions?** I am thinking the answer is yes. 2. **What is the extent of gaps causing the problem and what is the extent of short sequences causing the problems?**. 3. **Are there certain species that could be removed that would greatly increase the orhtologous region datatset?** These last two questions really need to be explored.  Let me do a quick look at what would happen if we removed all the regions that do not have all 24 species represented.
+
+## Looking into what the dataset would look like with only the representative species
+
+This also shows how we gained 24 represenative species when we removed the duplicates.  Now we have 16673, when before we had 14950, gained 1723. 
+
+Overall though I think this is a nice dataset where we have 16,673 orthologous TFBS regions. 
+```{r}
+dataset1 %>%
+  group_by(region, align_position) %>%
+  tally() %>%
+  group_by(n) %>%
+  tally() %>% 
+  ggplot(., aes(n, nn)) +
+  geom_bar(stat = "identity") + 
+   theme(text = element_text(size = 17),
+      axis.text.y = element_text(size = 10),
+      plot.title = element_text( size=20)) +
+  labs(title=" Range of species number in each orthologous \n TFBS region \n", x = "# of species in each region", y = "orthologous TFBS regions") 
+
+16673 - 14950 
+```
+
+
+## Remove the regions that don't have all 24 species represented
+
+```{r}
+
+## First we need to filter just the ones that have 24 represenative species
+## all the regions that will be used to filter by 
+## ps this filtering method rulz! `filter(n() == 24)` 
+## You can filter by grouping number or I assume anything else you calculate
+## Reference: https://stackoverflow.com/questions/26573285/using-filter-with-count
+
+## Takes a few min
+dataset3 <- dataset2 %>%
+  group_by(region, align_position, strand) %>%
+  filter(n() == 24) 
+
+## Double check removal went well
+dataset3 %>%
+  group_by(region, align_position) %>%
+  tally() %>%
+  group_by(n) %>%
+  tally() %>%  
+  ggplot(., aes(n, nn)) +
+  geom_bar(stat = "identity") + 
+  xlim(0,26) +
+  theme(text = element_text(size = 17),
+        plot.title = element_text( size=20)) +
+   labs(title=" Range of species number in each orthologous \n TFBS region \n", x = "# of species in each region", y = "orthologous TFBS regions") 
+```
+
+
+## Final quality control dataset
+
+```{r}
+write.csv(dataset3, "../data/all_data_bcd_2019_10_01_after_QC.csv")
+```
