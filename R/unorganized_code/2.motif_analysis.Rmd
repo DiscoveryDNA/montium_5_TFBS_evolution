@@ -116,6 +116,8 @@ dataset1 %>%
 
 ## This us cool, this means that there are about 15,000 regions that
 ## have all 24 species represented!
+
+```{r}
 dataset1 %>%
   group_by(region, align_position) %>%
   tally() %>%

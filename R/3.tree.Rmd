@@ -1,56 +1,118 @@
 ---
 title: "R Notebook"
 output: html_notebook
+editor_options: 
+  chunk_output_type: console
 ---
 
 
+## Purpose
+
+To map TFBS changes onto tree and visualize what is the prominant changes that are occuring. 
+
+For those species that do, you can ask: How is this sequence different between them? Are these clade specific changes?  For those species that do not have the sequence, is this an instance of TFBS sequence decay?  How did this sequence decay?  It would be good to be able to identify, using the tree, what TFBS arose and which TFBS decayed. Still have to work out exactly how, but overall, we could use ancestral state reconstruction. 
+
+We need the tree especially to create anscetral sequence reconstruction. Which I believe the best option is Phangorn as seen in this tutorial: [https://cran.r-project.org/web/packages/phangorn/vignettes/Ancestral.pdf](https://cran.r-project.org/web/packages/phangorn/vignettes/Ancestral.pdf).
+
+We need to have the tree and redo the work that was done in [Moses et al., 2003](https://www.ncbi.nlm.nih.gov/pubmed/12946282).
+
 ```{r}
-## Visualize
+
+## Libraries
+library(ggplot2)
+library(reshape2)
+library(stringr)
+library(tidyverse)
+library(ggtree)
+library(skimr)
+library(ape)
+library(viridis)
+library(viridisLite)
+library(plyr)
+#library(qdap)
+library(stringr)
+library(Biostrings)
+#library(BSgenome)
+#library(Rsamtools)
+library(PWMEnrich)
+library("colorspace")
+```
+
+```{r}
+## Read in tree and clean
+## Raw tree
+tree <- read.tree("../data/tree/montium_phylogram_newick.tre")
+
+## Before trimming
+tree$tip.label
+
+## Regions to remove
+tips_remove <- c("DFengkainesis", "ananassae", "biarmipes","DTrapezifons","DParvula","DOrosa","DOgumai", "DOhnishii", "DLini","DMalagassya","DSeguyi", "DNikananu", "DBurlai", "elegans","biarmipes","simulans", "DGreeni", "DTruncata", "DTani", "DBicornuta", "DBocki", "triauraria_2_bronski", "DBarbarae", "DBocqueti", "DChauvacae", "DCurta_N", "DDiplacantha", "Drosophila_melanogaster")
+
+## Remove regions
+prunetree <- drop.tip(tree,tips_remove)
+
+## Clean up names to match other data
+prunetree$tip.label <- gsub("_bronski", "", prunetree$tip.label)
+prunetree$tip.label <- paste0("D. ", prunetree$tip.label)
+
+## Basic Bitch Tree
 ggtree(prunetree) + 
-  geom_text2(aes(subset = isTip, 
+  geom_text(aes(label = label), hjust=-.3) + 
+  ggplot2::xlim(0, 0.07)
+
+write.tree(prunetree, file = "../data/tree/cleanedTree.tre")
+
+prunetree
+```
+
+## This is just an overview on how to visualize branches on a tree
+
+```{r}
+## Visualizing nodes
+## Visualize
+
+ggtree(prunetree) + 
+  geom_text2(aes(#subset = isTip, # uncomment for just the tips
                  label = node), hjust = -.3) + 
   geom_tiplab(hjust = -.4) + 
   ggplot2::xlim(0, 0.07)
 
-## Find the most Recent common ancestor
-## MRCA(tree, tip = c("D. lacteicornis", "D. asahinai"))
-
-## Then you need to basically create a function that labels each of the nodes.
-## Make a dictionary dataframe
-tip_dictionary <- as.data.frame(cbind(label = prunetree$tip.label, tip_number = 1:length(prunetree$tip.label)))
-
-## Add new column based on species groups
-occur$species_labels <- occur$species
-
-## Find and replace
-for(j in seq_along(tip_dictionary$label)){
-  occur$species_labels <- gsub(tip_dictionary$label[j], tip_dictionary$tip_number[j], occur$species_labels)
-}
-
-head(occur)
-## occur$species_labels
-
-## This will be a good strategy.  We need to name by 
+## This will be a good strategy.  We need to name by the nodes
 cls <- list(c1 = c(22, 20, 33),
             c2 = 7)
 
 tree <- groupOTU(prunetree, cls)
-library("colorspace")
+
 ggtree(tree, aes(color=group, linetype=group)) + geom_tiplab() +
      scale_color_manual(values=c("black", rainbow_hcl(4))) + theme(legend.position="right")
 
-## Another way to label nodes
 tree <- groupClade(prunetree, node=c(31,32, 35,36,37,42,43))
 ggtree(tree, aes(color = group)) + 
   scale_color_manual(values = c("black", rep("pink",8)))
 ```
 
-### Making the species names 
 
-```{r}
-# summary(as.factor(occur$species))
-test <- paste0("c", occur$species[50])
-test2  <- eval(parse(text = test)) ## This doesn't work with one species. 
+Below code is for matching to motif_e3xtract output
+```{r, eval=FALSE}
+## For switching out the species names in other files
+species_key <- read.csv("../data/montium_species_laneID.csv")
+species <- species_key$species
+lane <- species_key$lane_ID
 
+## pos
+for(j in seq_along(lane)){
+  pos$species <- gsub(lane[j], species[j], pos$species)
+}
 
+## occur
+for(j in seq_along(lane)) {
+  occur$species <- gsub(lane[j], species[j], occur$species)
+}
+
+#############################################
+##  Making new column based on species number
+############################################
+
+occur$species_count  <- str_count(occur$species, 'D.')
 ```

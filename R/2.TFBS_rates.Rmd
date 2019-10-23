@@ -1,56 +1,89 @@
 ---
 title: "R Notebook"
 output: html_notebook
+editor_options: 
+  chunk_output_type: console
 ---
 
 
+
 ```{r}
-## Visualize
-ggtree(prunetree) + 
-  geom_text2(aes(subset = isTip, 
-                 label = node), hjust = -.3) + 
-  geom_tiplab(hjust = -.4) + 
-  ggplot2::xlim(0, 0.07)
+library(reshape2)
+library(tidyverse)
+library(ggplot2); theme_set(theme_bw())
 
-## Find the most Recent common ancestor
-## MRCA(tree, tip = c("D. lacteicornis", "D. asahinai"))
-
-## Then you need to basically create a function that labels each of the nodes.
-## Make a dictionary dataframe
-tip_dictionary <- as.data.frame(cbind(label = prunetree$tip.label, tip_number = 1:length(prunetree$tip.label)))
-
-## Add new column based on species groups
-occur$species_labels <- occur$species
-
-## Find and replace
-for(j in seq_along(tip_dictionary$label)){
-  occur$species_labels <- gsub(tip_dictionary$label[j], tip_dictionary$tip_number[j], occur$species_labels)
-}
-
-head(occur)
-## occur$species_labels
-
-## This will be a good strategy.  We need to name by 
-cls <- list(c1 = c(22, 20, 33),
-            c2 = 7)
-
-tree <- groupOTU(prunetree, cls)
-library("colorspace")
-ggtree(tree, aes(color=group, linetype=group)) + geom_tiplab() +
-     scale_color_manual(values=c("black", rainbow_hcl(4))) + theme(legend.position="right")
-
-## Another way to label nodes
-tree <- groupClade(prunetree, node=c(31,32, 35,36,37,42,43))
-ggtree(tree, aes(color = group)) + 
-  scale_color_manual(values = c("black", rep("pink",8)))
+dataset <- read.csv("../data/all_data_bcd_2019_10_01_after_QC.csv")
 ```
 
-### Making the species names 
+## Checking it out
+```{r}
+head(dataset)
+
+## Set data types
+str(dataset)
+dataset$raw_seq <- as.character(dataset$raw_seq)
+dataset$enhancer_func <- as.factor(dataset$enhancer_func)
+```
+
+### Looking at postion specific across the whole dataset
+
+Code taken from Zoe's work.
+```{r}
+#group by lowercase factors and sum over n
+grouped_seq <- dataset %>%
+  group_by(raw_seq) %>% 
+  mutate(n= n()) %>% 
+  distinct(raw_seq, .keep_all=TRUE) %>%
+  arrange(desc(n))
+  
+#create a column containing lists of bases
+ordered_seq$split_seq = strsplit(ordered_seq$raw_seq, "")
+ordered_seq
+
+#assign a column to each base based on position
+pos_seq <- ordered_seq %>% 
+  separate(split_seq, c("pos0", "pos1", "pos2", "pos3", "pos4", "pos5", "pos6")) %>%
+  select(-c("pos0"))
+
+pos_seq_reshaped <- melt(pos_seq, measure.vars = c("pos1", "pos2", "pos3", "pos4", "pos5", "pos6"))
+
+pos_seq_groups <- pos_seq_reshaped %>% group_by(enhancer_func, variable) %>%
+             mutate(group_size = n()) %>%
+             group_by(variable, value, enhancer_func) %>%
+             summarise(perc = n()/max(group_size))
+
+colnames(pos_seq_groups)[colnames(pos_seq_groups)=="variable"] <- "positions"
+colnames(pos_seq_groups)[colnames(pos_seq_groups)=="value"] <- "nucleotides"
+colnames(pos_seq_groups)[colnames(pos_seq_groups)=="perc"] <- "percentage"
+
+pos_seq_groups
+
+ggplot(data=pos_seq_groups, aes(fill=enhancer_func, y=percentage, x=nucleotides)) + 
+  geom_bar(stat="identity", position="dodge") + 
+  scale_y_continuous(labels = scales::percent) + 
+  scale_fill_grey() +
+  facet_grid(~positions) 
+```
+
+## Now looking at each region more carefully 
+
+In the end, we will have to look at each region as it's own instance.  So, lets do some exploritory work looking at each region. Maybe by looking at nucleotide diversity at each position? 
+
+So essentially, we would be doing group_by, and calculating allele frequency at each postion, sum and multiple by 1/6.  Then see how each position differs depending on nucleotide fucntnion. This is where we would need some better controls. 
+
+One thing niharika coudl do is create these control experiments. 
 
 ```{r}
-# summary(as.factor(occur$species))
-test <- paste0("c", occur$species[50])
-test2  <- eval(parse(text = test)) ## This doesn't work with one species. 
+#create a column containing lists of bases
+dataset$split_seq = strsplit(dataset$raw_seq, "")
 
+#assign a column to each base based on position
+datset <- dataset %>% 
+  separate(split_seq, c("pos0", "pos1", "pos2", "pos3", "pos4", "pos5", "pos6")) %>%
+  select(-c("pos0"))
 
+## dataset_long <- melt(pos_seq, measure.vars = c("pos1", "pos2", "pos3", "pos4", "pos5", "pos6"))
+
+dataset %>%
+  group_by(region, align_position, strand) %>%
 ```
