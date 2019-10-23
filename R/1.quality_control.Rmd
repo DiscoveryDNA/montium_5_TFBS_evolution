@@ -14,7 +14,7 @@ The purpose of this notebook is to perform quality control on the data to unders
 
 ## Terminolgy
 
-- **TFBS**: Transcription Factor Binding Site. A DNA motif that is known to bind to Transciption Factors (protiens), which has been shown to be a mechanism to direct gene transcription processes. 
+- **TFBS**: Transcription Factor Binding Site. A DNA motif that is known to bind to Transciption Factors (proteins), which has been shown to be a mechanism to direct gene transcription processes. 
 - **alignment**: nucleotides aligned based on similarity. You can view the alignment in the alignment files located [https://drive.google.com/open?id=1UEXg0QMDFKIrvwnTxo64t2AWseYOCfD9](https://drive.google.com/open?id=1UEXg0QMDFKIrvwnTxo64t2AWseYOCfD9)
 - **orthlogous regions**: Refering to part of the alignment that is shared across the species. 
 - **orthologous TFBS region**: A part of the alignment that spans a called motif. In this case the Orthologous TFBS Region is always 6 base pairs long. 
