@@ -1,0 +1,79 @@
+```{r}
+## Libraries
+## Read in cleaned data 
+
+library(reshape2)
+library(tidyverse)
+library(ggplot2); theme_set(theme_bw())
+
+dataset1 <- read.csv("../data/all_data_bcd_2019_10_01_after_QC.csv")
+head(dataset1)
+```
+```{r}
+dataset2 <- dataset1 %>%
+distinct()
+
+dataset2 %>%
+group_by(region, align_position, strand) %>%
+tally() %>%
+group_by(n) %>%
+tally() %>%
+ggplot(., aes(n, nn)) +
+geom_bar(stat = "identity") +
+theme(text = element_text(size = 17),
+axis.text.y = element_text(size = 10),
+plot.title = element_text( size=20)) 
+
+dataset3 <- dataset2 %>%
+group_by(region, align_position, strand) %>%
+filter(n() == 24)
+
+```
+
+```{r}
+## Why are we missing species in orthologous regions
+## Why is the alignment for MEMB002E missing/ all the way to the right? Checked and there is a valid alignment at the correct region. Answer: score too low.
+dataset1 %>%
+filter(region == unique(dataset1$region)[1] & TFBS_called == "yes") %>%
+ggplot(., aes(align_position, species)) +
+geom_point() + facet_grid(.~strand) +
+theme(text = element_text(size = 17),
+axis.text.y = element_text(size = 10),
+plot.title = element_text( size=14)) +
+labs(title="All called bcd motif (score >7)", x = "alignment position", y = "species")
+```
+```{r}
+dataset1 %>%
+filter(region == unique(dataset1$region)[2] & TFBS_called == "yes") %>%
+ggplot(., aes(align_position, species)) +
+geom_point() + facet_grid(.~strand) +
+theme(text = element_text(size = 17),
+axis.text.y = element_text(size = 10),
+plot.title = element_text( size=14)) +
+labs(title="All called bcd motif (score >7)", x = "alignment position", y = "species")
+## MEMB005C missing b/c of gap in center of sequence: it's not even shown in the graph below
+
+dataset1 %>% filter(region == "VT15159")
+```
+
+```{r}
+## Are there species that are preferentially missing from the orthologous TFBS regions?
+get_orth <- function(df) {
+  df %>%
+  filter(region == unique(df$region)[2] & TFBS_called == "yes") %>% distinct(species, .keep_all = TRUE) %>% group_by(species)
+}
+orth <- dataset1 %>%
+  filter(region == unique(dataset1$region)[2] & TFBS_called == "yes") %>% distinct(species, .keep_all = TRUE) %>% group_by(species)
+original <- dataset1 %>% filter(region == unique(dataset1$region)[2]) %>% distinct(species, .keep_all = TRUE) %>% group_by(species)
+
+orth_species <- orth %>% select(species)
+original_species <- original %>% select(species)
+difference <- original_species[!original_species %in% orth_species]
+test <- unlist(orth_species)
+test1 <- orth_species[1]
+typeof(orth_species)
+test1 <- orth_species["species"]
+#find species missing from orth that are in original
+write.csv(orth, "../data/orth.csv", row.names = FALSE)
+write.csv(original, "../data/original.csv", row.names = FALSE)
+```
