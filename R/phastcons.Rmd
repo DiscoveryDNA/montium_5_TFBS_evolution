@@ -1,0 +1,98 @@
+#---
+title: "Phastcons"
+output: html_notebook
+---
+
+```{r}
+library("Biostrings")
+library("ape")
+library("seqinr") #write.fasta
+library("ProTrackR")
+library("rphast") #read.tm and read.wig
+library(rtracklayer) #read bed file
+library(tidyverse)
+
+align <- read.csv("../data/all_data_bcd_2019_10_01_after_QC.csv")
+#read in species key to change species names to fit tree names
+species_key <- read.csv("../data/montium_species_laneID2.csv")
+species <- species_key$species
+lane <- species_key$lane_ID
+
+## replace all the lane IDs with species names
+for(j in seq_along(lane)){
+  align$species <- gsub(lane[j], species[j], align$species)
+}
+tree <- read.tree("../data/tree/cleanedTree.tre")
+
+#read in one alignment file from one region
+align_ex <- read.fasta("../data/alignments/align_outlier_rm_with_length_VT0809.fa")
+
+temp <- align[align$region == "VT0809", ] 
+#get alignment file with correct names
+names(align_ex) <- temp$species
+align_ex <- align_ex[names(align_ex) %in% c("MEMB008C", "MEMB004A", "dkik") == FALSE]
+
+#write the cleaned region to fasta file in order to fit neutral model
+fname <- tempfile(pattern = "ortho3", tmpdir = tempdir(), fileext = "fa")
+write.fasta(align_ex, names(align_ex), file.out="temp.fa", open = "w")
+
+#neutral model run in terminal:
+#phyloFit --tree "tree" --subst-mod REV --out-root modelfile temp.fa
+#where "tree" is a string of the cleaned tree
+
+#read in neutral model 
+neutral <- read.tm("modelfile.mod")
+
+#attempt to run phastcons, but get error: number of names needs to match number of sequences
+pc <- phastCons(align_ex, neutral, expected.length=45, target.coverage=0.3, rho=0.4)
+
+#run in terminal:
+#phastCons --target-coverage 0.3 --expected-length 45 --rho 0.4 --most-conserved most-cons.bed temp.fa modelfile.mod > scores.wig
+```
+
+Visualizations
+
+```{r}
+
+#get scores, which were computed in terminal. 
+#problem?: start and end at same location
+scores <- read.wig("output/scores.wig")
+most_cons <- import("output/most-cons.bed")
+cons_ranges <- ranges(most_cons)
+
+
+#as.track.wig requires a two column df with coord and score as the columns
+scores_wig <- subset(scores, select = c("start", "score") )
+scores_wig <- scores_wig %>% rename(coord = start)
+
+#attempt to produce an alternative set of conservation scores using phyloP for comparison. Same error as when I try defining pc
+pp <- phyloP(neutral, align_ex, method="LRT", mode="CONACC")
+phyloPTrack <- as.track.wig(coord=pp$coord, score=pp$score, name="phyloP score", col="blue", smooth=TRUE, horiz.line=0)
+
+
+#create a track of scores to coordinates
+phastConsScoreTrack <- as.track.wig(wig=scores_wig, name="phastCons post prob", col="red", ylim=c(0, 1))
+
+#create a feat object with the start and end coordinates of most conserved elements to pass into as.track.feat
+feat <- feat(start=start(most_cons), end = end(most_cons))
+
+#create a track of most conserved elements
+consElTrack <- as.track.feat(feat, "phastCons most conserved", col="red")
+
+# this shows how many bases are predicted to be conserved
+print(coverage.feat(feat))
+
+
+#plot all tracks
+plot.track(list(consElTrack, phastConsScoreTrack), xlim=c(0, 2500), cex.labels=1.25, cex.axis=1.25, cex.lab=1.5)
+```
+```
+```{r}
+#Issues:
+#1) Can fit models in terminal, but not in notebook
+
+
+
+```
+
+
